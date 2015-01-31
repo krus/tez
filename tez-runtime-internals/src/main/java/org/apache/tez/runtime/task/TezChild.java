@@ -355,7 +355,8 @@ public class TezChild {
       }
       if (!isLocal) {
         RPC.stopProxy(umbilical);
-        LogManager.shutdown();
+        // TODO Temporary change. Revert. Ideally, move this over to the main method in TezChild if possible.
+//        LogManager.shutdown();
       }
     }
   }
