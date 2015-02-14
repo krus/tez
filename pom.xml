@@ -169,6 +169,11 @@
         <type>test-jar</type>
       </dependency>
       <dependency>
+        <groupId>org.apache.tez</groupId>
+        <artifactId>tez-ext-service-tests</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
         <groupId>org.slf4j</groupId>
         <artifactId>slf4j-api</artifactId>
         <version>1.7.5</version>
@@ -631,6 +636,7 @@
     <module>tez-dag</module>
     <module>tez-ui</module>
     <module>tez-plugins</module>
+    <module>tez-ext-service-tests</module>
     <module>tez-dist</module>
     <module>docs</module>
   </modules>
