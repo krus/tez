@@ -64,6 +64,7 @@ import org.apache.tez.dag.utils.RelocalizationUtils;
 import org.apache.tez.runtime.api.ExecutionContext;
 import org.apache.tez.runtime.api.impl.ExecutionContextImpl;
 import org.apache.tez.runtime.api.impl.TaskSpec;
+import org.apache.tez.runtime.api.impl.TezUmbilical;
 import org.apache.tez.runtime.common.objectregistry.ObjectRegistryImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,7 +94,6 @@ public class TezChild {
   private final int amHeartbeatInterval;
   private final long sendCounterInterval;
   private final int maxEventsToGet;
-  private final boolean isLocal;
   private final String workingDir;
 
   private final ListeningExecutorService executor;
@@ -108,9 +108,10 @@ public class TezChild {
   private final String user;
 
   private Multimap<String, String> startedInputsMap = HashMultimap.create();
+  private final boolean ownUmbilical;
 
+  private final TezTaskUmbilicalProtocol umbilical;
   private TaskReporter taskReporter;
-  private TezTaskUmbilicalProtocol umbilical;
   private int taskCount = 0;
   private TezVertexID lastVertexID;
 
@@ -119,7 +120,7 @@ public class TezChild {
       Map<String, String> serviceProviderEnvMap,
       ObjectRegistryImpl objectRegistry, String pid,
       ExecutionContext executionContext,
-      Credentials credentials, long memAvailable, String user)
+      Credentials credentials, long memAvailable, String user, TezTaskUmbilicalProtocol umbilical)
       throws IOException, InterruptedException {
     this.defaultConf = conf;
     this.containerIdString = containerIdentifier;
@@ -132,6 +133,8 @@ public class TezChild {
     this.credentials = credentials;
     this.memAvailable = memAvailable;
     this.user = user;
+
+    LOG.info("TezChild created with umbilical: " + umbilical);
 
     getTaskMaxSleepTime = defaultConf.getInt(
         TezConfiguration.TEZ_TASK_GET_TASK_SLEEP_INTERVAL_MS_MAX,
@@ -161,25 +164,27 @@ public class TezChild {
       }
     }
 
-    this.isLocal = defaultConf.getBoolean(TezConfiguration.TEZ_LOCAL_MODE,
-        TezConfiguration.TEZ_LOCAL_MODE_DEFAULT);
     UserGroupInformation taskOwner = UserGroupInformation.createRemoteUser(tokenIdentifier);
     Token<JobTokenIdentifier> jobToken = TokenCache.getSessionToken(credentials);
 
     serviceConsumerMetadata.put(TezConstants.TEZ_SHUFFLE_HANDLER_SERVICE_ID,
         TezCommonUtils.convertJobTokenToBytes(jobToken));
 
-    if (!isLocal) {
+    if (umbilical == null) {
       final InetSocketAddress address = NetUtils.createSocketAddrForHost(host, port);
       SecurityUtil.setTokenService(jobToken, address);
       taskOwner.addToken(jobToken);
-      umbilical = taskOwner.doAs(new PrivilegedExceptionAction<TezTaskUmbilicalProtocol>() {
+      this.umbilical = taskOwner.doAs(new PrivilegedExceptionAction<TezTaskUmbilicalProtocol>() {
         @Override
         public TezTaskUmbilicalProtocol run() throws Exception {
           return RPC.getProxy(TezTaskUmbilicalProtocol.class,
               TezTaskUmbilicalProtocol.versionID, address, defaultConf);
         }
       });
+      ownUmbilical = true;
+    } else {
+      this.umbilical = umbilical;
+      ownUmbilical = false;
     }
   }
   
@@ -353,17 +358,11 @@ public class TezChild {
       if (taskReporter != null) {
         taskReporter.shutdown();
       }
-      if (!isLocal) {
+      if (ownUmbilical) {
         RPC.stopProxy(umbilical);
         // TODO Temporary change. Revert. Ideally, move this over to the main method in TezChild if possible.
 //        LogManager.shutdown();
       }
-    }
-  }
-
-  public void setUmbilical(TezTaskUmbilicalProtocol tezTaskUmbilicalProtocol){
-    if(tezTaskUmbilicalProtocol != null){
-      this.umbilical = tezTaskUmbilicalProtocol;
     }
   }
 
@@ -412,7 +411,8 @@ public class TezChild {
   public static TezChild newTezChild(Configuration conf, String host, int port, String containerIdentifier,
       String tokenIdentifier, int attemptNumber, String[] localDirs, String workingDirectory,
       Map<String, String> serviceProviderEnvMap, @Nullable String pid,
-      ExecutionContext executionContext, Credentials credentials, long memAvailable, String user)
+      ExecutionContext executionContext, Credentials credentials, long memAvailable, String user,
+      TezTaskUmbilicalProtocol tezUmbilical)
       throws IOException, InterruptedException, TezException {
 
     // Pull in configuration specified for the session.
@@ -425,7 +425,7 @@ public class TezChild {
 
     return new TezChild(conf, host, port, containerIdentifier, tokenIdentifier,
         attemptNumber, workingDirectory, localDirs, serviceProviderEnvMap, objectRegistry, pid,
-        executionContext, credentials, memAvailable, user);
+        executionContext, credentials, memAvailable, user, tezUmbilical);
   }
 
   public static void main(String[] args) throws IOException, InterruptedException, TezException {
@@ -459,7 +459,7 @@ public class TezChild {
         tokenIdentifier, attemptNumber, localDirs, System.getenv(Environment.PWD.name()),
         System.getenv(), pid, new ExecutionContextImpl(System.getenv(Environment.NM_HOST.name())),
         credentials, Runtime.getRuntime().maxMemory(), System
-            .getenv(ApplicationConstants.Environment.USER.toString()));
+            .getenv(ApplicationConstants.Environment.USER.toString()), null);
     tezChild.run();
   }
 

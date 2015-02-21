@@ -464,7 +464,7 @@ public class DAGAppMaster extends AbstractService {
 
     //service to handle requests to TaskUmbilicalProtocol
     taskAttemptListener = createTaskAttemptListener(context,
-        taskHeartbeatHandler, containerHeartbeatHandler, taskCommunicatorClassIdentifiers);
+        taskHeartbeatHandler, containerHeartbeatHandler, taskCommunicatorClassIdentifiers, isLocal);
     addIfService(taskAttemptListener, true);
 
     containerSignatureMatcher = createContainerSignatureMatcher();
@@ -520,7 +520,7 @@ public class DAGAppMaster extends AbstractService {
         taskSchedulerEventHandler);
     addIfServiceDependency(taskSchedulerEventHandler, clientRpcServer);
 
-    this.containerLauncherRouter = createContainerLauncherRouter(conf, containerLauncherClassIdentifiers);
+    this.containerLauncherRouter = createContainerLauncherRouter(conf, containerLauncherClassIdentifiers, isLocal);
     addIfService(containerLauncherRouter, true);
     dispatcher.register(NMCommunicatorEventType.class, containerLauncherRouter);
 
@@ -1027,9 +1027,13 @@ public class DAGAppMaster extends AbstractService {
   }
 
   protected TaskAttemptListener createTaskAttemptListener(AppContext context,
-      TaskHeartbeatHandler thh, ContainerHeartbeatHandler chh, String[] taskCommunicatorClasses) {
+                                                          TaskHeartbeatHandler thh,
+                                                          ContainerHeartbeatHandler chh,
+                                                          String[] taskCommunicatorClasses,
+                                                          boolean isLocal) {
     TaskAttemptListener lis =
-        new TaskAttemptListenerImpTezDag(context, thh, chh,jobTokenSecretManager, taskCommunicatorClasses);
+        new TaskAttemptListenerImpTezDag(context, thh, chh, jobTokenSecretManager,
+            taskCommunicatorClasses, isLocal);
     return lis;
   }
 
@@ -1050,10 +1054,12 @@ public class DAGAppMaster extends AbstractService {
     return chh;
   }
 
-  protected ContainerLauncherRouter createContainerLauncherRouter(Configuration conf, String []containerLauncherClasses) throws
+  protected ContainerLauncherRouter createContainerLauncherRouter(Configuration conf,
+                                                                  String[] containerLauncherClasses,
+                                                                  boolean isLocal) throws
       UnknownHostException {
-    return  new ContainerLauncherRouter(conf, context, taskAttemptListener, workingDirectory, containerLauncherClasses);
-
+    return new ContainerLauncherRouter(conf, context, taskAttemptListener, workingDirectory,
+        containerLauncherClasses, isLocal);
   }
 
   public ApplicationId getAppID() {
@@ -2320,9 +2326,8 @@ public class DAGAppMaster extends AbstractService {
     StringBuilder sb = new StringBuilder();
     sb.append("AM Level configured ").append(component).append(": ");
     for (int i = 0; i < classIdentifiers.length; i++) {
-      sb.append("[").append(i).append(":").append(map.inverse().get(i)).append(":")
-          .append(taskSchedulers.inverse().get(i)).append(
-          "]");
+      sb.append("[").append(i).append(":").append(map.inverse().get(i))
+          .append(":").append(classIdentifiers[i]).append("]");
       if (i != classIdentifiers.length - 1) {
         sb.append(",");
       }
