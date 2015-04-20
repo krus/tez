@@ -1475,7 +1475,18 @@ public class TaskImpl implements Task, EventHandler<TaskEvent> {
       this.writeLock.unlock();
     }
   }
-  
+
+  @Override
+  public long getFirstAttemptStartTime() {
+    readLock.lock();
+    try {
+      // The first attempt will always have an index of 0.
+      return getAttempt(TezTaskAttemptID.getInstance(getTaskId(), 0)).getScheduleTime();
+    } finally {
+      readLock.unlock();
+    }
+  }
+
   @Private
   @VisibleForTesting
   public List<TezEvent> getTaskEvents() {
